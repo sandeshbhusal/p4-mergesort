@@ -1,0 +1,18 @@
+[package]
+name = "mergesort"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "parallel_mergesort"
+path = "src/parallel_mergesort.rs"
+
+[[bin]]
+name = "mergesort"
+path = "src/mergesort.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = "*"
+anyhow = "*"
