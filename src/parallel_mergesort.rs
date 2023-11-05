@@ -65,55 +65,27 @@ fn merge_sorted_chunks<T: Item>(chunk1: &[T], chunk2: &[T]) -> Vec<T> {
 
 /// Mergesort Multithreaded - sorts a given array with multiple threads.
 pub fn mergesort_mt<T: Item>(input: &mut [T], num_threads: usize) {
-    let input_length = input.len();
-    if input_length <= 1 {
+    if input.len() <= 1 {
         return;
     }
 
-    // If input string is too short, each thread can get a max of 1 element.
-    let num_threads = num_threads.min(input.len());
     input
-        .par_chunks_mut(num_threads)
+        .par_chunks_mut(num_threads.min(input.len()))
         .for_each(|mut t| parallel_mergesort(&mut t));
 
-    let chunks: Vec<&[T]> = input.chunks(num_threads).collect();
-    let mut heads: Vec<usize> = vec![0; chunks.len()];
-    let mut merged_array: Vec<T> = Vec::with_capacity(input_length);
+    let mut first_chunk_size = num_threads.min(input.len());
+    let second_chunk_size = first_chunk_size;
 
-    // While all elements have not been copied over,
-    while merged_array.len() < input_length {
-        let mut smallest = heads
-            .iter()
-            .enumerate()
-            .filter_map(|(chunk_id, head_ptr)| {
-                if *head_ptr < chunks[chunk_id].len() {
-                    Some(chunks[chunk_id][*head_ptr])
-                } else {
-                    None
-                }
-            })
-            .next()
-            .expect("at least one head should have elements when array is done");
-        let mut head_with_smallest_elem = 0;
-        for (head_index, &head_ptr) in heads.iter().enumerate() {
-            if head_ptr >= chunks[head_index].len() {
-                continue;
-            }
+    while first_chunk_size < input.len() {
+        let first_chunk = &input[0..first_chunk_size]; // The first chunk to merge
+        let second_chunk =
+            &input[first_chunk_size..(first_chunk_size + second_chunk_size).min(input.len())]; // The second chunk to merge.
+        let merged = merge_sorted_chunks(first_chunk, second_chunk); // Merged chunk
 
-            if chunks[head_index][head_ptr] <= smallest {
-                smallest = chunks[head_index][head_ptr];
-                head_with_smallest_elem = head_index;
-            }
-        }
-
-        // Insert the item at chunk head.
-        let head_ptr = heads[head_with_smallest_elem];
-        merged_array.push(chunks[head_with_smallest_elem][head_ptr]);
-        heads[head_with_smallest_elem] += 1;
+        first_chunk_size = (first_chunk_size + second_chunk_size).min(input.len()); // First chunk size increases, second chunk size is same.
+                                                                                    // But the length of first chunk cannot exceed that of the string itself.
+        input[0..first_chunk_size].copy_from_slice(&merged); // Copy 0..first_chunk_size to the input array
     }
-
-    // Copy over the merged elements to the original array.
-    input.swap_with_slice(&mut merged_array[..]);
 }
 
 #[cfg(test)]
