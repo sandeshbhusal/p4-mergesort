@@ -1,11 +1,19 @@
 use rayon::prelude::*;
 
+// Minimum size threshold at which mergesort will convert to insertion sort.
 const SIZE_THRESHOLD: usize = 5;
-pub trait Item: PartialEq + Eq + Ord + PartialOrd + Send + std::fmt::Debug + Copy {}
-impl Item for i32 {}
-impl Item for u32 {}
-impl Item for u8 {}
 
+// All sortable slices must satisfy the following constraints:
+// 1. Ord - All items of this type must be comparable and orderable.
+// 2. Debug - So that we can have nice dbg!() invocations in tests.
+// 3. Send - Should be safe to send across threads.
+// 4. Clone - Should be cloneable to store in temporary area before merge.
+pub trait Item: Ord + std::fmt::Debug + Send + Clone {}
+
+// Blanket implementation for all items that implement the Item trait's subtraits.
+impl<T> Item for T where T: Ord + std::fmt::Debug + Send + Clone {}
+
+// Insertion sort the given mutable slice.
 fn insertion_sort<T: Ord>(input: &mut [T]) {
     for i in 1..input.len() {
         let mut j = i;
@@ -16,6 +24,8 @@ fn insertion_sort<T: Ord>(input: &mut [T]) {
     }
 }
 
+// Normal mergesort. This function takes in a slice and calls single-threded
+// mergesort on it repeatedly.
 fn parallel_mergesort<T: Item>(input: &mut [T]) {
     // If the input is too small, sort it with insertion sort and return.
     if input.len() <= SIZE_THRESHOLD {
@@ -23,7 +33,8 @@ fn parallel_mergesort<T: Item>(input: &mut [T]) {
         return;
     }
 
-    // For a sufficiently-large input, split it into two chunks and call parallel_mergesort recursively on both.
+    // For a sufficiently-large input, split it into two chunks
+    // and call parallel_mergesort recursively on both.
     let mid: usize = input.len() / 2;
     let (mut chunk1, mut chunk2) = input.split_at_mut(mid);
     parallel_mergesort(&mut chunk1);
@@ -34,7 +45,7 @@ fn parallel_mergesort<T: Item>(input: &mut [T]) {
     chunk_vec
         .iter()
         .enumerate()
-        .for_each(|(i, e)| input[i] = *e);
+        .for_each(|(i, e)| input[i] = e.clone());
 }
 
 // Generate a larger vec from two chunks.
@@ -46,10 +57,12 @@ fn merge_sorted_chunks<T: Item>(chunk1: &[T], chunk2: &[T]) -> Vec<T> {
 
     while i < chunk1.len() && j < chunk2.len() {
         if chunk1[i] < chunk2[j] {
-            rval.push(chunk1[i]);
+            rval.push(chunk1[i].clone()); // calling ".clone()" for primitives is
+                                          // effectively the same as derefencing them (.copy()).
+                                          // See https://doc.rust-lang.org/src/core/clone.rs.html.
             i += 1;
         } else {
-            rval.push(chunk2[j]);
+            rval.push(chunk2[j].clone());
             j += 1;
         }
     }
@@ -64,6 +77,10 @@ fn merge_sorted_chunks<T: Item>(chunk1: &[T], chunk2: &[T]) -> Vec<T> {
 }
 
 /// Mergesort Multithreaded - sorts a given array with multiple threads.
+/// input - the input slice to sort.
+/// num_threads - the number of threads to use to sort this slice.
+///
+/// `mergesort_mt` can sort slices of types that implement the [`Item`] trait.
 pub fn mergesort_mt<T: Item>(input: &mut [T], num_threads: usize) {
     if input.len() <= 1 {
         return;
@@ -84,68 +101,8 @@ pub fn mergesort_mt<T: Item>(input: &mut [T], num_threads: usize) {
 
         first_chunk_size = (first_chunk_size + second_chunk_size).min(input.len()); // First chunk size increases, second chunk size is same.
                                                                                     // But the length of first chunk cannot exceed that of the string itself.
-        input[0..first_chunk_size].copy_from_slice(&merged); // Copy 0..first_chunk_size to the input array
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mergesort_mt_works() {
-        let mut input_vector = vec![
-            10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10,
-        ];
-        let mut sorted_vector = input_vector.clone();
-        sorted_vector.sort();
-        mergesort_mt(&mut input_vector[..], 2);
-
-        assert!(input_vector.iter().eq(sorted_vector.iter()));
-    }
-
-    #[test]
-    fn mergesort_mt_10_threads() {
-        let mut input_vector = vec![
-            10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10,
-        ];
-        let mut sorted_vector = input_vector.clone();
-        sorted_vector.sort();
-        mergesort_mt(&mut input_vector[..], 10);
-
-        assert!(input_vector.iter().eq(sorted_vector.iter()));
-    }
-
-    #[test]
-    fn mergesort_mt_shortest_possible() {
-        let mut input_vector = vec![2, 1];
-        let mut sorted = input_vector.clone();
-        sorted.sort();
-
-        mergesort_mt(&mut input_vector[..], 2);
-        assert!(input_vector.iter().eq(sorted.iter()));
-    }
-
-    #[test]
-    fn mergesort_mt_odd_length_array() {
-        let mut input_vector = vec![2, 1, 3];
-        let mut sorted = input_vector.clone();
-        sorted.sort();
-
-        mergesort_mt(&mut input_vector[..], 2);
-        assert!(input_vector.iter().eq(sorted.iter()));
-    }
-
-    #[test]
-    fn mergesort_mt_larger_array() {
-        let mut input_vector = vec![
-            10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29,
-        ];
-        let mut sorted = input_vector.clone();
-        sorted.sort();
-
-        mergesort_mt(&mut input_vector[..], 5);
-        assert!(input_vector.iter().eq(sorted.iter()));
+        input[0..first_chunk_size].clone_from_slice(&merged); // Copy 0..first_chunk_size to the input array
+                                                              // Running clone_from_slice will deref each item,
+                                                              // so for primitives it is same as *T
     }
 }

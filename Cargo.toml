@@ -16,3 +16,5 @@ path = "src/mergesort.rs"
 [dependencies]
 clap = "*"
 anyhow = "*"
+rayon = "*"
+rand = "*"
