@@ -1,4 +1,7 @@
+use std::time::Instant;
+
 use anyhow::Result;
+use clap::Parser;
 use parallel_mergesort::mergesort_mt;
 
 fn generate_random_array(num_items: usize) -> Vec<i32> {
@@ -9,18 +12,31 @@ fn generate_random_array(num_items: usize) -> Vec<i32> {
     rval
 }
 
+#[derive(Parser, Debug)]
+struct Arguments {
+    #[clap(
+        short = 'n',
+        long = "num_elements",
+        help = "Number of Elements to generate"
+    )]
+    num_elements: usize,
+    #[clap(
+        short = 't',
+        long = "num_threads",
+        help = "Number of threads to use to sort the array"
+    )]
+    num_threads: usize,
+}
+
 fn main() -> Result<()> {
-    for _ in 0..5 {
-        // Randomly generate an arary of upto 1M items.
-        let num_items = rand::random::<usize>() % 1000000;
-        println!("Testing for {} items", num_items);
-        let mut arr = generate_random_array(num_items);
-        let mut sorted_arr = arr.clone();
-        sorted_arr.sort();
-        mergesort_mt(&mut arr[..], 16);
+    let args = Arguments::parse();
 
-        assert!(arr.iter().eq(sorted_arr.iter()));
-    }
-
+    let mut arr = generate_random_array(args.num_elements);
+    let mut arr_clone = arr.clone();
+    arr_clone.sort();
+    let start = Instant::now();
+    mergesort_mt(&mut arr[..], args.num_threads);
+    println!("{},{},{}", args.num_elements, args.num_threads, start.elapsed().as_millis());
+    assert!(arr_clone.iter().eq(arr.iter())); 
     Ok(())
 }
