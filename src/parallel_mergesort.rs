@@ -42,10 +42,7 @@ fn parallel_mergesort<T: Item>(input: &mut [T]) {
 
     // Allocate an extra vector to hold the chunks' sorted elements in sorted order.
     let chunk_vec = merge_sorted_chunks(chunk1, chunk2);
-    chunk_vec
-        .iter()
-        .enumerate()
-        .for_each(|(i, e)| input[i] = e.clone());
+    input[..].clone_from_slice(&chunk_vec);
 }
 
 // Generate a larger vec from two chunks.
@@ -86,23 +83,41 @@ pub fn mergesort_mt<T: Item>(input: &mut [T], num_threads: usize) {
         return;
     }
 
+    let input_len = input.len();
+    let num_chunks = num_threads.min(input.len());
+    let chunk_size = input_len / num_chunks;
+    let mut left_chunk_len = chunk_size;
+
     input
-        .par_chunks_mut(num_threads.min(input.len()))
-        .for_each(|mut t| parallel_mergesort(&mut t));
+        .par_chunks_mut(chunk_size)
+        .for_each(|mut t| {
+            parallel_mergesort(&mut t)
+        });
 
-    let mut first_chunk_size = num_threads.min(input.len());
-    let second_chunk_size = first_chunk_size;
 
-    while first_chunk_size < input.len() {
-        let first_chunk = &input[0..first_chunk_size]; // The first chunk to merge
-        let second_chunk =
-            &input[first_chunk_size..(first_chunk_size + second_chunk_size).min(input.len())]; // The second chunk to merge.
-        let merged = merge_sorted_chunks(first_chunk, second_chunk); // Merged chunk
+    while left_chunk_len < input_len {
+        let (left, right) = input.split_at_mut(left_chunk_len);
+        let right = &mut right[..chunk_size.min(input_len - left_chunk_len)];
 
-        first_chunk_size = (first_chunk_size + second_chunk_size).min(input.len()); // First chunk size increases, second chunk size is same.
-                                                                                    // But the length of first chunk cannot exceed that of the string itself.
-        input[0..first_chunk_size].clone_from_slice(&merged); // Copy 0..first_chunk_size to the input array
-                                                              // Running clone_from_slice will deref each item,
-                                                              // so for primitives it is same as *T
+        let mut i = left.len() - 1;
+        let mut j = 0;
+
+        while j < right.len() && left[i] > right[j] {
+            let temp = left[i].clone();
+            left[i] = right[j].clone();
+            right[j] = temp.clone();
+
+            i -= 1;
+            j += 1;
+        }
+
+        // At this point, the left chunk contains all elements smaller than the right chunk.
+        // Sort the chunks individually.
+        parallel_mergesort(left);
+        parallel_mergesort(right);
+
+        // Increase left length
+        left_chunk_len = left.len() + right.len();
     }
+
 }
